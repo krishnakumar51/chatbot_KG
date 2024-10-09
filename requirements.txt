@@ -1,0 +1,11 @@
+streamlit
+neo4j
+langchain
+langchain-core
+langchain-community
+langchain-huggingface
+langchain-groq
+pydantic
+python-dotenv
+flask
+flask-cors

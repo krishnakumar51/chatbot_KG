@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "qa_chatbot"
+version = "0.1.0"
+description = "A QA chatbot using LangChain and Neo4j."
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+streamlit = "*"
+neo4j = "*"
+langchain = "*"
+langchain-core = "*"
+langchain-community = "*"
+langchain-huggingface = "*"
+langchain-groq = "*"
+pydantic = "*"
+python-dotenv = "*"
+flask = "*"
+flask-cors = "*"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
