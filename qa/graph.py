@@ -30,6 +30,9 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Load environment variables
 load_dotenv()
+
+
+
 try:
     # Local development using secrets.toml or environment variables
     uri = os.getenv("NEO4J_URI")

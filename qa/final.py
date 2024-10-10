@@ -44,18 +44,20 @@ def initialize_system():
     
     try:
         # Local development using secrets.toml or environment variables
-        uri = os.getenv("NEO4J_URI")
-        username = os.getenv("NEO4J_USERNAME")
-        password = os.getenv("NEO4J_PASSWORD")
-        api_key = os.getenv("GROQ_API_KEY")
-        print("Environment variables loaded.")
-    except KeyError:
-        # Deployment on Streamlit Cloud
+
         api_key = st.secrets["general"]["GROQ_API_KEY"]
         uri = st.secrets["general"]["NEO4J_URI"]
         username = st.secrets["general"]["NEO4J_USERNAME"]
         password = st.secrets["general"]["NEO4J_PASSWORD"]
         print("Secrets loaded from Streamlit.")
+
+    except KeyError:
+        uri = os.getenv("NEO4J_URI")
+        username = os.getenv("NEO4J_USERNAME")
+        password = os.getenv("NEO4J_PASSWORD")
+        api_key = os.getenv("GROQ_API_KEY")
+        print("Environment variables loaded.")# Deployment on Streamlit Cloud
+
 
     # Load the LLM
     llm = ChatGroq(groq_api_key=api_key, model_name="llama3-8b-8192")
