@@ -5,7 +5,7 @@ description = "A QA chatbot using LangChain and Neo4j."
 authors = ["Your Name <you@example.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.10.14"
 streamlit = "*"
 neo4j = "*"
 langchain = "*"

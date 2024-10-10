@@ -207,9 +207,10 @@ def get_qa_response(question: str) -> str:
         )
     
     except Exception as e:
+        
         # Return Markdown formatted error message
         return (
-            f"**An error occurred:** `{str(e)}`\n\n"
+            f"**An error occurred:** "
             "For assistance, please reach out to our customer service on WhatsApp: "
             "[Contact Support](https://api.whatsapp.com/send/?phone=9105575000)"
         )
