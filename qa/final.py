@@ -45,10 +45,10 @@ def initialize_system():
     try:
         # Local development using secrets.toml or environment variables
 
-        api_key = st.secrets["general"]["GROQ_API_KEY"]
-        uri = st.secrets["general"]["NEO4J_URI"]
-        username = st.secrets["general"]["NEO4J_USERNAME"]
-        password = st.secrets["general"]["NEO4J_PASSWORD"]
+        api_key = st.secrets["GROQ_API_KEY"]
+        uri = st.secrets["NEO4J_URI"]
+        username = st.secrets["NEO4J_USERNAME"]
+        password = st.secrets["NEO4J_PASSWORD"]
         print("Secrets loaded from Streamlit.")
 
     except KeyError:
