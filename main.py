@@ -1,10 +1,17 @@
 import streamlit as st
-from qa.graph import get_qa_response
+from qa.final import get_qa_response, initialize_system, create_chain
 import os
 
 # Set up Streamlit page configurations
 st.set_page_config(page_title="QA Chatbot", page_icon="🤖")
 st.title("🤖 QA Chatbot")
+
+# Initialize models and graph only if they haven't been loaded before
+if "initialized" not in st.session_state:
+    st.session_state.llm, st.session_state.graph, st.session_state.vector_index = initialize_system()
+    st.session_state.chain = create_chain(st.session_state.llm, st.session_state.graph, st.session_state.vector_index)
+    st.session_state.initialized = True
+    print("Environment variables loaded and components initialized.")
 
 # Initialize the session state for conversation history and status flags
 if "conversation_history" not in st.session_state:
@@ -38,9 +45,11 @@ if st.session_state.user_input_processed and not st.session_state.api_called:
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
-                # Get the last user query and generate a response using your QA system
+                # Get the last user query and generate a response using the QA system
                 last_user_message = st.session_state.conversation_history[-1]["content"]
-                response = get_qa_response(last_user_message)
+                
+                # Call `get_qa_response` with the required arguments: `vector_index`, `chain`, and `question`
+                response =get_qa_response(st.session_state.chain, last_user_message)
 
                 # Display the assistant's response and update the conversation history
                 st.markdown(response)

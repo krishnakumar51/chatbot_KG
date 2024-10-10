@@ -19,6 +19,10 @@ import logging
 import warnings
 from neo4j.exceptions import ServiceUnavailable
 from langchain_groq import ChatGroq
+import streamlit as st 
+import toml
+
+
 
 # Logging configuration
 logging.getLogger("neo4j").setLevel(logging.ERROR)
@@ -26,14 +30,23 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Load environment variables
 load_dotenv()
+try:
+    # Local development using secrets.toml or environment variables
+    uri = os.getenv("NEO4J_URI")
+    username = os.getenv("NEO4J_USERNAME")
+    password = os.getenv("NEO4J_PASSWORD")
+    api_key = os.getenv("GROQ_API_KEY")
+    print("env")
+except KeyError:
+    # Deployment on Streamlit Cloud
+    api_key = st.secrets["general"]["GROQ_API_KEY"]
+    uri = st.secrets["general"]["NEO4J_URI"]
+    username = st.secrets["general"]["NEO4J_USERNAME"]
+    password = st.secrets["general"]["NEO4J_PASSWORD"]
+    print("secerts")
 
-# Neo4j connection setup
-uri = os.getenv("NEO4J_URI")
-username = os.getenv("NEO4J_USERNAME")
-password = os.getenv("NEO4J_PASSWORD")
 
-# Groq API setup
-api_key = os.getenv("GROQ_API_KEY")
+
 llm = ChatGroq(groq_api_key=api_key, model_name="llama3-8b-8192")
 
 # Neo4j graph setup

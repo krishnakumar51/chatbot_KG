@@ -1,13 +1,12 @@
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS  # Importing flask-cors for CORS support
-from qa.graph import get_qa_response  # Import the refactored function from qa.py
+from qa.final import get_qa_response, initialize_system, create_chain  # Import necessary functions
 from dotenv import load_dotenv
 import os
 import logging
 
 # Load environment variables
 load_dotenv()
-
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # Set secret key for session management
@@ -17,6 +16,10 @@ CORS(app)
 
 # Logging configuration
 logging.basicConfig(level=logging.INFO)
+
+# Initialize models and graph only if they haven't been loaded before
+llm, graph, vector_index = initialize_system()
+chain = create_chain(llm, graph, vector_index)
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -33,7 +36,8 @@ def chat():
 
     try:
         # Generate a response using the get_qa_response() function
-        response = get_qa_response(prompt)
+        # Pass the required arguments
+        response = get_qa_response(chain, prompt)
 
         # Format response to ensure Markdown link formatting
         markdown_response = f"**Response:**\n\n{response}"
