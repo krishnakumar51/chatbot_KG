@@ -56,6 +56,14 @@ class Neo4jGraph:
                 time.sleep(self.delay)
         raise RuntimeError("Failed to connect to Neo4j")
 
+    def query(self, cypher_query, parameters=None):
+        """
+        Execute a Cypher query against the Neo4j database and return the results.
+        """
+        with self.driver.session() as session:
+            result = session.run(cypher_query, parameters or {})
+            return [record.data() for record in result]
+
 
 
 
