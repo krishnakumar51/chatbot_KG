@@ -28,7 +28,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 class Neo4jGraph:
-    def __init__(self, uri, username, password, max_retries=5, delay=3, pool_size=50, timeout=100):
+    def __init__(self, uri, username, password, max_retries=5, delay=3, pool_size=50, timeout=60):
         self.uri = uri
         self.username = username
         self.password = password
@@ -101,7 +101,7 @@ def initialize_system():
 
     # Neo4j graph setup with retry mechanism
     try:
-        graph = Neo4jGraph(url=uri, username=username, password=password)
+        graph = Neo4jGraph(uri=uri, username=username, password=password)
     except Exception as e:
         print(f"Error connecting to Neo4j: {e}")
         raise RuntimeError("Failed to connect to Neo4j")
