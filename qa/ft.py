@@ -1,13 +1,13 @@
 import os
 import logging
 import warnings
-from typing import List
+from typing import List, Tuple
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables import (
     RunnableBranch,
     RunnableLambda,
@@ -66,6 +66,60 @@ class Neo4jGraph:
 
 
 
+# Validate input text to prevent empty or overly long inputs
+def validate_input(question: str):
+    if not question or len(question.strip()) == 0:
+        raise ValueError("The input text is empty.")
+    if len(question) > 500:  # Adjust this based on model input limits
+        raise ValueError("Input text is too long.")
+    return question.strip()
+
+
+# Extract entities from the text using the LLM
+def get_entities_from_text(question: str):
+    """Extract entities from the provided text using the LLM."""
+    try:
+        validated_question = validate_input(question)
+        
+        # Generate the prompt input
+        prompt_input = prompt.format(question=validated_question)
+        
+        # Invoke the LLM
+        response = entity_chain.invoke(prompt_input)  # or however you call your chain
+        
+        # Process the response
+        entities = process_response(response["choices"][0]["message"]["content"])
+
+        if not entities or 'names' not in entities:
+            raise ValueError("No entities found in the response.")
+        return entities
+
+    except ValueError as ve:
+        logging.error(f"Validation error: {ve}")
+        return {"error": str(ve)}
+
+    except requests.exceptions.HTTPError as http_err:
+        logging.error(f"HTTPError: {http_err.response.status_code} - {http_err.response.text}")
+        return {"error": "There was an issue processing your request. Please try again later."}
+
+    except Exception as e:
+        logging.error(f"Unexpected error: {str(e)}")
+        return {"error": "An unexpected error occurred. Please contact support."}
+
+
+
+# Retry entity extraction in case of transient errors
+def get_entities_with_retry(question: str, retries=3, delay=2):
+    attempt = 0
+    while attempt < retries:
+        try:
+            return get_entities_from_text(question)
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {delay} seconds...")
+            time.sleep(delay)
+            attempt += 1
+    return {"error": "Failed to process the request after multiple attempts."}
+
 
 # Entity extraction model using Pydantic and LLM
 class Entities(BaseModel):
@@ -76,6 +130,11 @@ class Entities(BaseModel):
         description="All the person, organization, or business entities that "
         "appear in the text",
     )
+
+
+
+
+
 
 def initialize_system():
     """
@@ -136,29 +195,29 @@ def create_chain(llm, graph, vector_index):
     Create and return the QA chain using LLM, Neo4j graph, and vector index.
     """
     # Entity extraction prompt
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                "You are a concise and polite customer service bot. ",
-            ),
-            (
-                "human",
-                "Use the given format to extract information from the following "
-                "input: {question}",
-            ),
-        ]
-    )
+    # prompt = ChatPromptTemplate.from_messages(
+    #     [
+    #         (
+    #             "system",
+    #             "You are a concise and polite customer service bot. ",
+    #         ),
+    #         (
+    #             "human",
+    #             "Use the given format to extract information from the following "
+    #             "input: {question}",
+    #         ),
+    #     ]
+    # )
 
     prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
-                "You are a concise and polite assistant."
+                "You are a concise and polite assistant, designed to **strictly extract** important entity names such as people, organizations, and businesses from text. **Your response must only include the names without any extra information, context, or links.** Return the information in a structured JSON format."
             ),
             (
                 "human",
-                "Please extract entity names from the following text: {question}. Return a JSON object with the key 'names' as a list of entity names."
+                "Please strictly extract entity names from the following text. Return a JSON object with the key 'names' as a list of entity names."
             )
         ]
     )
@@ -166,17 +225,17 @@ def create_chain(llm, graph, vector_index):
     entity_chain = prompt | llm.with_structured_output(Entities)
 
     def generate_full_text_query(input: str) -> str:
-        full_text_query = ""
-        words = [el for el in remove_lucene_chars(input).split() if el]
-        for word in words[:-1]:
-            full_text_query += f" {word}~2 AND"
-        full_text_query += f" {words[-1]}~2"
-        return full_text_query.strip()
+        words = remove_lucene_chars(input).split()
+        return " AND ".join([f"{word}~2" for word in words]) if words else ""
+
 
     # Define internal retrievers and their functionality
     def structured_retriever(question: str) -> str:
-        result = ""
         entities = entity_chain.invoke({"question": question})
+        if not entities.names:
+            return "No relevant entities found."
+
+        result = ""
         for entity in entities.names:
             response = graph.query(
                 """
@@ -192,25 +251,30 @@ def create_chain(llm, graph, vector_index):
                 RETURN neighbor.id + ' - ' + type(r) + ' -> ' + node.id AS output
                 }
                 RETURN output LIMIT 50
-                """,
-                {"query": generate_full_text_query(entity)},
-            )
+                """, 
+                {"query": generate_full_text_query(entity)})
             result += "\n".join([el['output'] for el in response])
-        return result
+        
+        return result if result else "No structured data found."
 
-    def retriever(question: str):
+
+    def retriever(question: str) -> str:
         structured_data = structured_retriever(question)
-        unstructured_data = [el.page_content for el in vector_index.similarity_search(question)]
-
+        unstructured_data = [doc.page_content for doc in vector_index.similarity_search(question)]
+        
         if not structured_data and not unstructured_data:
-            return "No relevant results found. Please reach out to our customer service on WhatsApp: [Contact Support](https://api.whatsapp.com/send/?phone=9105575000)"
+            return "No relevant results found. Please contact customer service."
 
-        final_data = f"""Structured data:
-        {structured_data}
-        Unstructured data:
-        {"#Document ".join(unstructured_data)}
+        final_data = f"""
+        **Structured Data:**
+        {structured_data or 'No structured data found.'}
+
+        **Unstructured Data:**
+        {' '.join(unstructured_data) or 'No unstructured data found.'}
         """
+        
         return final_data
+
 
     # Condense question prompt for context-based QA
     _template = """Given the following conversation and a follow up question, rephrase the follow up question to be a standalone question,
@@ -221,6 +285,13 @@ def create_chain(llm, graph, vector_index):
     Standalone question:"""
     CONDENSE_QUESTION_PROMPT = PromptTemplate.from_template(_template)
 
+
+    def _format_chat_history(chat_history: List[Tuple[str, str]]) -> List:
+        buffer = []
+        for human, ai in chat_history:
+            buffer.append(HumanMessage(content=human))
+            buffer.append(AIMessage(content=ai))
+        return buffer
 
     # Runnable branch to determine if the question includes chat history
     _search_query = RunnableBranch(

@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS  # Importing flask-cors for CORS support
-from qa.final import get_qa_response, initialize_system, create_chain  # Import necessary functions
+from qa.ft import get_qa_response, initialize_system, create_chain  # Import necessary functions
 from dotenv import load_dotenv
 import os
 import logging
