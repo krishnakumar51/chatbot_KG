@@ -25,6 +25,39 @@ import streamlit as st
 logging.getLogger("neo4j").setLevel(logging.ERROR)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+
+
+class Neo4jGraph:
+    def __init__(self, uri, username, password, max_retries=5, delay=3, pool_size=50, timeout=30):
+        self.uri = uri
+        self.username = username
+        self.password = password
+        self.max_retries = max_retries
+        self.delay = delay
+        self.pool_size = pool_size
+        self.timeout = timeout
+        self.driver = self.connect_with_retry()
+
+    def connect_with_retry(self):
+        for attempt in range(self.max_retries):
+            try:
+                driver = GraphDatabase.driver(
+                    self.uri, 
+                    auth=(self.username, self.password), 
+                    max_connection_pool_size=self.pool_size,  
+                    connection_acquisition_timeout=self.timeout
+                )
+                with driver.session() as session:
+                    result = session.run("RETURN 1")
+                    print(f"Connected to Neo4j successfully on attempt {attempt + 1}")
+                    return driver
+            except (exceptions.ServiceUnavailable, exceptions.ConnectionError) as e:
+                print(f"Connection failed on attempt {attempt + 1}. Retrying in {self.delay} seconds...")
+                time.sleep(self.delay)
+        raise RuntimeError(f"Failed to connect to Neo4j after {self.max_retries} attempts.")
+
+
+
 # Entity extraction model using Pydantic and LLM
 class Entities(BaseModel):
     """Identifying information about entities."""
@@ -41,10 +74,9 @@ def initialize_system():
     """
     # Load environment variables
     load_dotenv()
-    
+
     try:
         # Local development using secrets.toml or environment variables
-
         api_key = st.secrets["GROQ_API_KEY"]
         uri = st.secrets["NEO4J_URI"]
         username = st.secrets["NEO4J_USERNAME"]
@@ -52,30 +84,43 @@ def initialize_system():
         print("Secrets loaded from Streamlit.")
 
     except KeyError:
+        # Fallback to environment variables
         uri = os.getenv("NEO4J_URI")
         username = os.getenv("NEO4J_USERNAME")
         password = os.getenv("NEO4J_PASSWORD")
         api_key = os.getenv("GROQ_API_KEY")
-        print("Environment variables loaded.")# Deployment on Streamlit Cloud
-
+        print("Environment variables loaded.")
 
     # Load the LLM
-    llm = ChatGroq(groq_api_key=api_key, model_name="llama3-8b-8192")
+    try:
+        llm = ChatGroq(groq_api_key=api_key, model_name="llama3-8b-8192")
+    except Exception as e:
+        print(f"Error loading LLM: {e}")
+        raise RuntimeError("Failed to load the LLM")
 
-    # Neo4j graph setup
-    graph = Neo4jGraph(url=uri, username=username, password=password)
+    # Neo4j graph setup with retry mechanism
+    try:
+        graph = Neo4jGraph(url=uri, username=username, password=password)
+    except Exception as e:
+        print(f"Error connecting to Neo4j: {e}")
+        raise RuntimeError("Failed to connect to Neo4j")
 
     # Embeddings setup for hybrid search
-    embeddings_hf = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
-    vector_index = Neo4jVector.from_existing_graph(
-        embedding=embeddings_hf,
-        search_type="hybrid",
-        node_label="Document",
-        text_node_properties=["text"],
-        embedding_node_property="embedding"
-    )
+    try:
+        embeddings_hf = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
+        vector_index = Neo4jVector.from_existing_graph(
+            embedding=embeddings_hf,
+            search_type="hybrid",
+            node_label="Document",
+            text_node_properties=["text"],
+            embedding_node_property="embedding"
+        )
+    except Exception as e:
+        print(f"Error setting up embeddings: {e}")
+        raise RuntimeError("Failed to setup embeddings and vector index")
 
     return llm, graph, vector_index
+
 
 def create_chain(llm, graph, vector_index):
     """
@@ -220,5 +265,3 @@ def get_qa_response(chain, question: str) -> str:
             "For assistance, please reach out to our customer service on WhatsApp: "
             "[Contact Support](https://api.whatsapp.com/send/?phone=9105575000)"
         )
-
-
