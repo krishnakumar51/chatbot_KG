@@ -28,7 +28,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 class Neo4jGraph:
-    def __init__(self, uri, username, password, max_retries=5, delay=3, pool_size=50, timeout=30):
+    def __init__(self, uri, username, password, max_retries=5, delay=3, pool_size=50, timeout=100):
         self.uri = uri
         self.username = username
         self.password = password
@@ -52,9 +52,10 @@ class Neo4jGraph:
                     print(f"Connected to Neo4j successfully on attempt {attempt + 1}")
                     return driver
             except (exceptions.ServiceUnavailable, exceptions.ConnectionError) as e:
-                print(f"Connection failed on attempt {attempt + 1}. Retrying in {self.delay} seconds...")
+                print(f"Connection failed on attempt {attempt + 1}: {e}. Retrying in {self.delay} seconds...")
                 time.sleep(self.delay)
-        raise RuntimeError(f"Failed to connect to Neo4j after {self.max_retries} attempts.")
+        raise RuntimeError("Failed to connect to Neo4j")
+
 
 
 
