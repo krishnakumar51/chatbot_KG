@@ -1,5 +1,5 @@
 import streamlit as st
-from qa.ft import get_qa_response, initialize_system, create_chain
+from qa.semantic import get_qa_response, initialize_system, create_chain
 import os
 
 # Set up Streamlit page configurations
