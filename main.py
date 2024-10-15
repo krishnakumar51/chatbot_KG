@@ -47,17 +47,21 @@ if st.session_state.user_input_processed and not st.session_state.api_called:
             try:
                 # Get the last user query and generate a response using the QA system
                 last_user_message = st.session_state.conversation_history[-1]["content"]
-                
-                # Call `get_qa_response` with the required arguments: `vector_index`, `chain`, and `question`
-                response =get_qa_response(st.session_state.chain, last_user_message)
 
-                # Display the assistant's response and update the conversation history
-                st.markdown(response)
-                st.session_state.conversation_history.append({"role": "assistant", "content": response})
+                # Ensure the input isn't empty or invalid
+                if last_user_message.strip():
+                    # Call `get_qa_response` with the required arguments: `chain` and `question`
+                    response = get_qa_response(st.session_state.chain, last_user_message)
 
-                # Mark API call as completed
-                st.session_state.api_called = True
-                st.session_state.user_input_processed = False  # Reset flag for the next user input
+                    # Display the assistant's response and update the conversation history
+                    st.markdown(response)
+                    st.session_state.conversation_history.append({"role": "assistant", "content": response})
+
+                    # Mark API call as completed
+                    st.session_state.api_called = True
+                    st.session_state.user_input_processed = False  # Reset flag for the next user input
+                else:
+                    st.error("Please enter a valid question.")
 
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")

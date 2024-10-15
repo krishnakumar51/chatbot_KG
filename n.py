@@ -1,25 +1,86 @@
-from neo4j import GraphDatabase, exceptions
-import time
+import streamlit as st
+from qa.history import get_qa_response, initialize_system, create_chain
+import os
 
-# Define the connection retry logic function
-def connect_with_retry(uri, user, password, max_retries=5, delay=3):
-    for attempt in range(max_retries):
-        try:
-            driver = GraphDatabase.driver(uri, auth=(user, password))
-            with driver.session() as session:
-                print("Connected to Neo4j successfully.")
-                return session
-        except (exceptions.ServiceUnavailable, exceptions.ConnectionError) as e:
-            print(f"Connection failed on attempt {attempt + 1}. Retrying in {delay} seconds...")
-            time.sleep(delay)
-    raise RuntimeError(f"Failed to connect to Neo4j after {max_retries} attempts.")
+# Set up Streamlit page configurations
+st.set_page_config(page_title="QA Chatbot", page_icon="🤖")
+st.title("🤖 QA Chatbot")
 
-# Simulate the function in a loop for 100 times
-failures = 0
-for i in range(100):
-    try:
-        print(f"Attempt {i + 1}:")
-        connect_with_retry("neo4j+s://4cfe3812.databases.neo4j.io", "neo4j", "password")
-    except RuntimeError as e:
-        print(f"Error on attempt {i + 1}: {e}")
-        failures += 1
+# Initialize models and graph only if they haven't been loaded before
+if "initialized" not in st.session_state:
+    st.session_state.llm, st.session_state.graph, st.session_state.vector_index = initialize_system()
+    st.session_state.chain = create_chain(st.session_state.llm, st.session_state.graph, st.session_state.vector_index)
+    st.session_state.initialized = True
+    print("Environment variables loaded and components initialized.")
+
+# Initialize the session state for conversation history and status flags
+if "conversation_history" not in st.session_state:
+    st.session_state.conversation_history = []  # Chat history
+
+if "user_input_processed" not in st.session_state:
+    st.session_state.user_input_processed = False
+
+if "api_called" not in st.session_state:
+    st.session_state.api_called = False
+
+# Display the existing conversation messages
+for message in st.session_state.conversation_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Chat input box for the user to provide queries or prompts
+if prompt := st.chat_input("How can I assist you today?"):
+    if not st.session_state.user_input_processed:
+        # Append the user's message to the conversation history
+        st.session_state.conversation_history.append({"role": "human", "content": prompt})
+        with st.chat_message("human"):
+            st.markdown(prompt)
+
+        # Set flags indicating that the user input has been processed
+        st.session_state.user_input_processed = True
+        st.session_state.api_called = False  # Reset API call status for this input
+
+# Generate a response only if input is provided and the API hasn't been called yet
+if st.session_state.user_input_processed and not st.session_state.api_called:
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            try:
+                # Get the last user query and generate a response using the QA system
+                last_user_message = st.session_state.conversation_history[-1]["content"]
+
+                # Ensure the input isn't empty or invalid
+                if last_user_message.strip():
+                    # Call `get_qa_response` with the chain, question, and chat history
+                    response = get_qa_response(
+                        st.session_state.chain,              # Chain with entity and history awareness
+                        last_user_message,                   # User's latest question
+                        st.session_state.conversation_history  # Chat history to provide context
+                    )
+
+                    # Display the assistant's response and update the conversation history
+                    st.markdown(response)
+                    st.session_state.conversation_history.append({"role": "assistant", "content": response})
+
+                    # Mark API call as completed
+                    st.session_state.api_called = True
+                    st.session_state.user_input_processed = False  # Reset flag for the next user input
+                else:
+                    st.error("Please enter a valid question.")
+
+            except Exception as e:
+                st.error(f"An error occurred: {str(e)}")
+
+# Sidebar controls to clear the chat history
+st.sidebar.title("🛠️ Options")
+if st.sidebar.button("Clear Conversation History"):
+    st.session_state.conversation_history = []
+    st.sidebar.success("Conversation history cleared successfully!")
+
+# Sidebar information or app description
+st.sidebar.markdown(
+    """
+    ### About the Chatbot
+    This chatbot is designed to interact with users using a custom QA system.
+    You can ask it questions, and it will provide responses based on the data it has been trained on.
+    """
+)

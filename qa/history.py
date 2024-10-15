@@ -20,6 +20,8 @@ from langchain_groq import ChatGroq
 from langchain.chains import create_retrieval_chain
 from langchain_community.vectorstores.neo4j_vector import remove_lucene_chars, Neo4jVector
 import streamlit as st
+from langchain.chains import  create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
 import re
 
 # Logging configuration
@@ -192,6 +194,274 @@ def initialize_system():
     return llm, graph, vector_index
 
 
+class Entities(BaseModel):
+    names: List[str] = Field(
+        ...,
+        description="All person, organization, or business entities that appear in the text."
+    )
+
+def create_chain(llm, graph, vector_index):
+    """
+    Create and return a QA chain using LLM, Neo4j graph, and vector index. 
+    This chain handles chat history, document retrieval, and question answering.
+    """
+
+    # Step 1: Entity extraction prompt setup using structured output from LLM
+    entity_prompt = ChatPromptTemplate.from_messages([
+        ("system", 
+        "You are a concise and polite assistant, designed to **strictly extract** important entity names such as people, organizations, and businesses from text. "
+                "**Your response must only include the names without any extra information, context, or links.** Return the information in a structured JSON format. "
+                "Example format: {{\"names\": [\"Entity1\", \"Entity2\"]}}"
+                "If there are any URLs, make sure they are formatted as {{[Click here](url)}} in Markdown. "
+                ),
+        ("human", "{input}")
+    ])
+    
+    # Step 2: Create entity extraction chain using the LLM with structured output mode
+    entity_chain = entity_prompt | llm.with_structured_output(Entities, method="json_mode")
+
+    # Step 3: Set up the main system prompt for combining chat history and retrieved context
+    system_prompt = """
+    You are an assistant for question-answering tasks. Use the following chat history and retrieved context 
+    to answer the question. If you don't know the answer, say that you don't know. Keep your answer concise.
+
+    Chat History:
+    {chat_history}
+
+    Context:
+    {context}
+    """
+
+    # Step 4: Create the ChatPromptTemplate for combining chat history and context
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "{input}")
+    ])
+
+    # Step 5: Create question-answering chain using document retrieval and chat history
+    question_answer_chain = create_stuff_documents_chain(llm, prompt)
+
+    # Step 6: Set up the retriever to fetch relevant documents from the Neo4j vector index
+    retriever = vector_index.as_retriever()
+
+    # Step 7: Create the full retrieval-augmented generation (RAG) chain
+    rag_chain = create_retrieval_chain(retriever, question_answer_chain)
+
+    # Step 8: Function to handle chat history and query for RAG chain
+    def _get_condensed_query_with_history(chat_history, question):
+        """
+        Combine chat history and current question into a final input for the RAG chain.
+        """
+        response = rag_chain.invoke({
+            "input": question,          # The follow-up question from the user
+            "chat_history": chat_history  # Chat history to provide context
+        })
+        return response["answer"]
+
+    # Step 9: Structured retriever for retrieving data from the graph using entities
+    def structured_retriever(question: str) -> str:
+        """
+        Retrieves structured data from the Neo4j graph based on the entities extracted from the question.
+        """
+        # Use the entity_chain to extract entities from the user's question
+        entities = entity_chain.invoke({"input": question})
+        if not entities.names:
+            return "No relevant entities found."
+
+        # Query the Neo4j graph using the extracted entities
+        result = ""
+        for entity in entities.names:
+            response = graph.query(
+                """
+                CALL db.index.fulltext.queryNodes('entity', $query, {limit:2})
+                YIELD node, score
+                CALL {
+                WITH node
+                MATCH (node)-[r:MENTIONS]->(neighbor)
+                RETURN node.id + ' - ' + type(r) + ' -> ' + neighbor.id AS output
+                UNION ALL
+                WITH node
+                MATCH (node)<-[r:MENTIONS]-(neighbor)
+                RETURN neighbor.id + ' - ' + type(r) + ' -> ' + node.id AS output
+                }
+                RETURN output LIMIT 50
+                """, 
+                {"query": entity}
+            )
+            result += "\n".join([el['output'] for el in response])
+        
+        return result if result else "No structured data found."
+
+    # Step 10: General retriever combining structured and unstructured data
+    def retriever(question: str) -> str:
+        """
+        Combines both structured and unstructured data retrieval to answer the user's question.
+        """
+        structured_data = structured_retriever(question)
+        unstructured_data = [doc.page_content for doc in vector_index.similarity_search(question)]
+        
+        if not structured_data and not unstructured_data:
+            return "No relevant results found. Please contact customer service."
+
+        final_data = f"""
+        **Structured Data:**
+        {structured_data or 'No structured data found.'}
+
+        **Unstructured Data:**
+        {' '.join(unstructured_data) or 'No unstructured data found.'}
+        """
+        
+        return final_data
+
+    # Condense question prompt for context-based QA (previous history + current query)
+    _template = """Given the following conversation and a follow-up question, rephrase the follow-up question to be a standalone question,
+    in its original language.
+    Chat History:
+    {chat_history}
+    Follow-up Input: {question}
+    Standalone question:"""
+    CONDENSE_QUESTION_PROMPT = ChatPromptTemplate.from_template(_template)
+
+    # Final return: The entire chain structure with history-awareness, entity extraction, and retrieval
+    return {
+        "chain": rag_chain,                      # The history-aware RAG chain
+        "condense_query": CONDENSE_QUESTION_PROMPT,  # Condense follow-up questions for standalone query
+        "structured_retriever": structured_retriever, # Neo4j graph data retriever using entities
+        "retriever": retriever                  # Combines structured and unstructured data
+    }
+def format_urls_as_markdown(text):
+    """
+    Convert all URLs in the text to Markdown format [Click here](url).
+    """
+    url_pattern = r'(http[s]?://[^\s]+|www\.[^\s]+)'
+
+    def replace_with_markdown(match):
+        url = match.group(0)
+        return f"[Click here]({url})"
+
+    formatted_text = re.sub(url_pattern, replace_with_markdown, text)
+    return formatted_text
+
+
+
+def get_qa_response(chain, question: str, chat_history: List[dict]) -> str:
+    """
+    Get an answer for the user's query using the pre-defined RAG chain.
+    This includes chat history, entity extraction, and document retrieval.
+    """
+    print(f"Input question: {question}")
+    
+    try:
+        # Invoke the RAG chain with the current question and chat history
+        response = chain["chain"].invoke({
+            "input": question,          # The user's question
+            "chat_history": chat_history  # Chat history to provide context
+        })
+        
+        # Check if there are any results from the chain
+        if not response or "answer" not in response:
+            return (
+                "**No relevant results found.**\n\n"
+                "Please reach out to our customer service."
+            )
+        
+        # Format the final result (including handling any URLs in the response)
+        formatted_result = format_urls_as_markdown(response["answer"])
+        
+        return f"**Response:**\n\n{formatted_result}"
+
+    except ServiceUnavailable:
+        return (
+            "**Sorry, the database is currently unavailable.**\n\n"
+            "Please try again later. For immediate assistance, reach out to customer support."
+        )
+
+    except Exception as e:
+        return (
+            f"**An error occurred:** `{str(e)}`\n\n"
+            "For assistance, please contact our customer service."
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+'''
 def create_chain(llm, graph, vector_index):
     """
     Create and return the QA chain using LLM, Neo4j graph, and vector index.
@@ -341,30 +611,26 @@ def create_chain(llm, graph, vector_index):
         
     #     return list(buffer)
 
-    def _format_chat_history(chat_history: List[Tuple[str, str]]) -> List:
-        buffer = []
-        for human, ai in chat_history:
-            buffer.append(HumanMessage(content=human))
-            buffer.append(AIMessage(content=ai))
-        return buffer                                                         
+    # Chain to combine chat history with the current query
+    def _get_condensed_query_with_history(chat_history, question):
+        retriever = vector_index.as_retriever()
 
-    # Runnable branch to determine if the question includes chat history
-    _search_query = RunnableBranch(
-        # If input includes chat_history, we condense it with the follow-up question
-        (
-            RunnableLambda(lambda x: bool(x.get("chat_history"))).with_config(
-                run_name="HasChatHistoryCheck"
-            ),  # Condense follow-up question and chat into a standalone_question
-            RunnablePassthrough.assign(
-                chat_history=lambda x: _format_chat_history(x["chat_history"])
-            )
-            | CONDENSE_QUESTION_PROMPT
-            | llm
-            | StrOutputParser(),
-        ),
-        # Else, we have no chat history, so just pass through the question
-        RunnableLambda(lambda x : x["question"]),
-    )
+        # Create question-answer chain with chat history
+        question_answer_chain = create_stuff_documents_chain(
+            llm, 
+            ChatPromptTemplate.from_messages([
+                ("system", "Use the following chat history and context to answer: {chat_history}\n\nContext: {context}"),
+                ("human", "{input}")
+            ])
+        )
+
+        rag_chain = create_retrieval_chain(retriever, question_answer_chain)
+        response = rag_chain.invoke({
+            "input": question,
+            "chat_history": chat_history
+        })
+
+        return response["answer"]
 
     # Final response template
     template = """Answer the question based only on the following context:
@@ -494,3 +760,4 @@ def get_qa_response(chain, question: str) -> str:
         )
 
 
+'''
