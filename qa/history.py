@@ -212,7 +212,7 @@ def create_chain(llm, graph, vector_index):
         "You are a concise and polite assistant, designed to **strictly extract** important entity names such as people, organizations, and businesses from text. "
                 "**Your response must only include the names without any extra information, context, or links.** Return the information in a structured JSON format. "
                 "Example format: {{\"names\": [\"Entity1\", \"Entity2\"]}}"
-                "If there are any URLs, make sure they are formatted as {{[Click here](url)}} in Markdown. "
+                "Do not provide answers from your own knowledge. Only respond with entity names that are directly retrieved from the given text or knowledge graph."
                 ),
         ("human", "{input}")
     ])
@@ -329,6 +329,39 @@ def create_chain(llm, graph, vector_index):
         "structured_retriever": structured_retriever, # Neo4j graph data retriever using entities
         "retriever": retriever                  # Combines structured and unstructured data
     }
+import re
+import re
+
+def remove_problematic_chars(text: str) -> str:
+    """
+    Remove problematic characters that may interfere with Lucene-based queries.
+    Specifically removing slashes and other special characters that aren't necessary.
+    """
+    # Remove forward slashes
+    text = text.replace("/", "")
+    
+    # Optionally handle backslashes and other special characters if needed
+    text = text.replace("\\", "")
+    
+    # Remove other problematic special characters like *, %, etc. if necessary
+    text = re.sub(r'[!@#$%^&*()_+={}\[\]:;"\'<>?,~`]', '', text)
+
+    # Optionally handle additional sanitization logic (e.g., extra spaces, etc.)
+    text = ' '.join(text.split())
+    
+    return text
+
+def sanitize_input(question: str) -> str:
+    """
+    Sanitize user input to handle problematic characters by removing slashes,
+    quotes, and other special symbols that can cause issues with Lucene queries.
+    """
+    # Remove problematic characters
+    sanitized_question = remove_problematic_chars(question)
+    
+    return sanitized_question
+
+
 def format_urls_as_markdown(text):
     """
     Convert all URLs in the text to Markdown format [Click here](url).
@@ -343,19 +376,21 @@ def format_urls_as_markdown(text):
     return formatted_text
 
 
-
 def get_qa_response(chain, question: str, chat_history: List[dict]) -> str:
     """
     Get an answer for the user's query using the pre-defined RAG chain.
     This includes chat history, entity extraction, and document retrieval.
     """
-    print(f"Input question: {question}")
+    # Sanitize the input question to avoid issues with special characters
+    sanitized_question = sanitize_input(question)
+    
+    print(f"Sanitized input question: {sanitized_question}")
     
     try:
-        # Invoke the RAG chain with the current question and chat history
+        # Invoke the RAG chain with the sanitized question and chat history
         response = chain["chain"].invoke({
-            "input": question,          # The user's question
-            "chat_history": chat_history  # Chat history to provide context
+            "input": sanitized_question,          # The sanitized question
+            "chat_history": chat_history          # Chat history to provide context
         })
         
         # Check if there are any results from the chain
@@ -381,39 +416,6 @@ def get_qa_response(chain, question: str, chat_history: List[dict]) -> str:
             f"**An error occurred:** `{str(e)}`\n\n"
             "For assistance, please contact our customer service."
         )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
