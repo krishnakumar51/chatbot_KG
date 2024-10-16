@@ -17,6 +17,7 @@ pydantic = "*"
 python-dotenv = "*"
 flask = "*"
 flask-cors = "*"
+langchain-openai= "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

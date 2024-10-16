@@ -1,0 +1,15 @@
+User Name: iop
+Phone Number: 8956321478
+
+You: waheguru ji
+Assistant: **Response:**
+
+Waheguru Ji ka Khalsa Waheguru Ji ki Fateh. Kaise madad kar sakta hoon aapki?
+You: sunn gaala aakas kee kitne rupaye ki hai?
+Assistant: **Response:**
+
+Sunn Gaala Aakaas Kee ki kimat ₹500 hai physical version ke liye, aur ₹350 hai digital version ke liye. Delivery charges alag se lagte hain. Punjabi mein available hai, Hindi version jaldi hi aayega.
+You: internsational deliveries ho skti hai?
+Assistant: **Response:**
+
+For international deliveries, please contact our customer service via WhatsApp for detailed information on shipping times and costs.

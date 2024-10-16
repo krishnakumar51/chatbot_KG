@@ -1,0 +1,19 @@
+User Name: krishna
+Phone Number: 8528528520
+
+You: hi
+Assistant: **Response:**
+
+Sat Sri Akal ji! Kaise madad kar sakta hoon aapki?
+You: mujhe sunn gaaala aakas kee ki kitaab chaiye
+Assistant: **Response:**
+
+आप Sunn Galaa Aakaas Kee की किताब ऑर्डर कर सकते हैं। फिजिकल कॉपी के लिए आपको अपना पता और पिन कोड व्हाट्सएप लिंक के माध्यम से भेजना होगा। डिजिटल वर्शन भी उपलब्ध है। आप व्हाट्सएप लिंक के माध्यम से आर्डर कर सकते हैं: [व्हाट्सएप पर सहायता संपर्क करें]([Click here](https://api.whatsapp.com/send/?phone=9105575000)।)
+You: uska price kitna hai?
+Assistant: **Response:**
+
+मूल्य आवंटन के लिए कृपया व्हाट्सएप लिंक के माध्यम से संपर्क करें: [व्हाट्सएप पर सहायता संपर्क करें]([Click here](https://api.whatsapp.com/send/?phone=9105575000)।)
+You: sunn gaala aakas kee price?
+Assistant: **Response:**
+
+मूल्य आवंटन के लिए कृपया व्हाट्सएप लिंक के माध्यम से संपर्क करें: [व्हाट्सएप पर सहायता संपर्क करें]([Click here](https://api.whatsapp.com/send/?phone=9105575000)।)

@@ -16,6 +16,7 @@ setup(
         'python-dotenv',
         'flask',
         'flask-cors',
+        'langchain-openai'
     ],
     entry_points={
         'console_scripts': [

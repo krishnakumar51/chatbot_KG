@@ -23,11 +23,14 @@ import streamlit as st
 from langchain.chains import  create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 import re
-
+from langchain_openai import ChatOpenAI
 # Logging configuration
 logging.getLogger("neo4j").setLevel(logging.ERROR)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+
+
+# ```````````````````````````````````````````api key for tracking= asat_c2af83ef78e842d6bf21a18c35869816                   ``````````````````````````````````
 
 
 class Neo4jGraph:
@@ -149,6 +152,7 @@ def initialize_system():
     try:
         # Local development using secrets.toml or environment variables
         api_key = st.secrets["GROQ_API_KEY"]
+        open_key = st.secrets["OPENAI_API_KEY"]
         uri = st.secrets["NEO4J_URI"]
         username = st.secrets["NEO4J_USERNAME"]
         password = st.secrets["NEO4J_PASSWORD"]
@@ -157,6 +161,7 @@ def initialize_system():
     except KeyError:
         # Fallback to environment variables
         uri = os.getenv("NEO4J_URI")
+        open_key = os.getenv("OPENAI_API_KEY")
         username = os.getenv("NEO4J_USERNAME")
         password = os.getenv("NEO4J_PASSWORD")
         api_key = os.getenv("GROQ_API_KEY")
@@ -165,6 +170,7 @@ def initialize_system():
     # Load the LLM
     try:
         llm = ChatGroq(groq_api_key=api_key, model_name="llama3-8b-8192")
+        chat = ChatOpenAI(openai_api_key=open_key, model_name="gpt-3.5-turbo")
         # llm = ChatGroq(groq_api_key=api_key, model_name="llama3-groq-70b-8192-tool-use-preview")
     except Exception as e:
         print(f"Error loading LLM: {e}")
@@ -191,7 +197,7 @@ def initialize_system():
         print(f"Error setting up embeddings: {e}")
         raise RuntimeError("Failed to setup embeddings and vector index")
 
-    return llm, graph, vector_index
+    return llm, graph, vector_index, chat
 
 
 class Entities(BaseModel):
@@ -200,19 +206,19 @@ class Entities(BaseModel):
         description="All person, organization, or business entities that appear in the text."
     )
 
-def create_chain(llm, graph, vector_index):
+def create_chain(llm, graph, vector_index, chat):
     """
     Create and return a QA chain using LLM, Neo4j graph, and vector index. 
     This chain handles chat history, document retrieval, and question answering.
     """
-
     # Step 1: Entity extraction prompt setup using structured output from LLM
     entity_prompt = ChatPromptTemplate.from_messages([
         ("system", 
         "You are a concise and polite assistant, designed to **strictly extract** important entity names such as people, organizations, and businesses from text. "
-                "**Your response must only include the names without any extra information, context, or links.** Return the information in a structured JSON format. "
-                "Example format: {{\"names\": [\"Entity1\", \"Entity2\"]}}"
-                "Do not provide answers from your own knowledge. Only respond with entity names that are directly retrieved from the given text or knowledge graph."
+        "**Your response must only include the names without any extra information, context, or links.** "
+        "Return the information in a structured JSON format. "
+        "Example format: {{\"names\": [\"Entity1\", \"Entity2\"]}}. "
+        "Do not provide answers from your own knowledge. Only respond with entity names that are directly retrieved from the given text or knowledge graph."
                 ),
         ("human", "{input}")
     ])
@@ -222,8 +228,17 @@ def create_chain(llm, graph, vector_index):
 
     # Step 3: Set up the main system prompt for combining chat history and retrieved context
     system_prompt = """
-    You are an assistant for question-answering tasks. Use the following chat history and retrieved context 
-    to answer the question. If you don't know the answer, say that you don't know. Keep your answer concise.
+    You are an assistant for friendly customer assitant tasks. 
+    You are a multilingual assistant. Always respond in the same language as the user's input, with the following defaults:
+    - If the input is in 'Hindi or Roman Hindi' (e.g., "Bharat ki rajdhani kya hai?"), respond in Hindi.
+    - If the input is in 'Punjabi or Roman Punjabi' (e.g., "Bharat di rajdhani ki hai?"), respond in Punjabi.
+    - If the input is in English or any other language, respond in English.
+    If you don't know the answer, respond with 'मुझे नहीं पता।' for Hindi, 'ਮੈਂ ਨਹੀਂ ਜਾਣਦਾ।' for Punjabi, or 'I don't know.' for English.
+    Use the provided context and chat history to answer the question directly. 
+    If you don't know the answer, respond with 'Please reach out to our customer service on WhatsApp:[Contact Support](https://api.whatsapp.com/send/?phone=9105575000)'. 
+    Limit your response to a few sentences. Avoid unnecessary details or lengthy explanations. 
+    Do not reference the context or chat history explicitly and don't mention 'According to the provided context'.
+
 
     Chat History:
     {chat_history}
@@ -239,7 +254,10 @@ def create_chain(llm, graph, vector_index):
     ])
 
     # Step 5: Create question-answering chain using document retrieval and chat history
-    question_answer_chain = create_stuff_documents_chain(llm, prompt)
+
+
+    # using gpt===============================================================================================================
+    question_answer_chain = create_stuff_documents_chain(chat, prompt)
 
     # Step 6: Set up the retriever to fetch relevant documents from the Neo4j vector index
     retriever = vector_index.as_retriever()
@@ -315,7 +333,9 @@ def create_chain(llm, graph, vector_index):
 
     # Condense question prompt for context-based QA (previous history + current query)
     _template = """Given the following conversation and a follow-up question, rephrase the follow-up question to be a standalone question,
-    in its original language.
+    in its original language.Limit your response to a few sentences. Avoid unnecessary details or lengthy explanations. 
+    Do not reference the context or chat history explicitly and don't mention 'According to the provided context'.
+
     Chat History:
     {chat_history}
     Follow-up Input: {question}
@@ -329,8 +349,7 @@ def create_chain(llm, graph, vector_index):
         "structured_retriever": structured_retriever, # Neo4j graph data retriever using entities
         "retriever": retriever                  # Combines structured and unstructured data
     }
-import re
-import re
+
 
 def remove_problematic_chars(text: str) -> str:
     """
@@ -375,7 +394,6 @@ def format_urls_as_markdown(text):
     formatted_text = re.sub(url_pattern, replace_with_markdown, text)
     return formatted_text
 
-
 def get_qa_response(chain, question: str, chat_history: List[dict]) -> str:
     """
     Get an answer for the user's query using the pre-defined RAG chain.
@@ -412,11 +430,14 @@ def get_qa_response(chain, question: str, chat_history: List[dict]) -> str:
         )
 
     except Exception as e:
+        # Log the error instead of showing it to the user
+        logging.error(f"Error in get_qa_response: {str(e)}")
+        print(f"Error occurred: {str(e)}")  # Log for developers in the backend
+        
         return (
-            f"**An error occurred:** `{str(e)}`\n\n"
-            "For assistance, please contact our customer service."
+            "**An unexpected error occurred.**\n\n"
+            "Please try again later or contact customer support."
         )
-
 
 
 
