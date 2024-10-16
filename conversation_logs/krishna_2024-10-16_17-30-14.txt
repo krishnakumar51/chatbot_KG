@@ -1,0 +1,7 @@
+User Name: krishna
+Phone Number: 85296314
+
+You: hi
+Assistant: **An unexpected error occurred.**
+
+Please try again later or contact customer support.

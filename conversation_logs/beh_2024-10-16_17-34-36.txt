@@ -1,0 +1,21 @@
+User Name: beh
+Phone Number: erheh55
+
+You: waheguru ji
+Assistant: **Response:**
+
+Waheguru Ji ka Khalsa Waheguru ji ki Fateh. Kaise madad kar sakta hoon aapki?
+You: sunn gaala aakas kee ka price kitna hai?
+Assistant: **Response:**
+
+यह किताब की कीमत भारतीय रुपया में ₹500 है जबकि डिजिटल संस्करण की कीमत ₹350 है। डिलीवरी चार्ज इसमें शामिल नहीं हैं। आप इसे व्हाट्सएप के जरिए आर्डर कर सकते हैं। 📚📖
+
+[WhatsApp से संपर्क करें]([Click here](https://api.whatsapp.com/send/?phone=9105575000))
+You: aur delivery charges kitne hai?
+Assistant: **Response:**
+
+मुझे नहीं पता।
+You: aur delivery charges kitne hai?
+Assistant: **Response:**
+
+मुझे नहीं पता।

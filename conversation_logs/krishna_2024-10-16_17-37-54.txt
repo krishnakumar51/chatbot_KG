@@ -1,0 +1,11 @@
+User Name: krishna
+Phone Number: 8529631472
+
+You: hi
+Assistant: **Response:**
+
+Sat Sri Akal ji! How can I assist you today?
+You: mujhe sunn gaaala aakas kee vykhya leni hai
+Assistant: **Response:**
+
+कृपया इस विशेष व्याख्या के लिए [अमृत मेरी बाणिया दा गुलदस्ता]([Click here](https://api.whatsapp.com/send/?phone=9105575000)) पर जाकर आर्डर करें। यह पुस्तक सिख आत्मिक अध्ययन के लिए एक महत्वपूर्ण स्रोत है और आपको मेधावी परंपराओं के बारे में महत्वपूर्ण जानकारी प्रदान करेगी।
